@@ -157,3 +157,95 @@ class FlowCamReader(Node):
                             obj.copy(),
                             FlowCamObject(row, lst_name, collage, collage_bin),
                         )
+
+class FlowCamObjectNoBin:
+    """
+    A single object.
+
+    Not to be instanciated manually.
+    
+    .. seealso::
+         :py:class:`~FlowCamReader`
+    """
+
+    def __init__(self, data, lst_name, collage):
+        self.data = data
+        self.lst_name = lst_name
+        self.collage = collage
+
+    def __getattr__(self, name):
+        try:
+            return self.data[name]
+        except KeyError:
+            raise AttributeError(name)
+
+    @property
+    def slice(self):
+        return (
+            slice(self.image_y, self.image_y + self.image_h),
+            slice(self.image_x, self.image_x + self.image_w),
+        )
+
+    @property
+    def image(self):
+        """The object image."""
+        return self.collage[self.slice]
+
+
+@ReturnOutputs
+@Output("regionprops")
+class FlowCamReaderNoBin(Node):
+    """
+    |stream| Read a flowcam sample with collage files.
+    Modification from FlowCamReader when no mask files (.bin) are available.
+
+    .. note::
+        This Node creates multiple objects per incoming object.
+
+    Args:
+        lst_fn (str or Path, optional): The path to a ``.lst`` file.
+
+    Example:
+        .. code-block:: python
+
+            obj = FlowCamReaderNoBin("flowcam.lst")
+            image = obj.image
+    """
+
+    def __init__(self, lst_fn: RawOrVariable[Union[str, pathlib.Path]]):
+        super().__init__()
+
+        self.lst_fn = lst_fn
+
+    def transform_stream(self, stream):
+        with closing_if_closable(stream):
+            for obj in stream:
+                lst_fn = self.prepare_input(obj, "lst_fn")
+
+                # Convert to str to allow Path objects
+                lst_fn = str(lst_fn)
+
+                root_path, lst_name = os.path.split(lst_fn)
+                lst_name = os.path.splitext(lst_name)[0]
+
+                reader = _LstReader(lst_fn)
+
+                for collage_file, data in itertools.groupby(
+                    reader, operator.itemgetter("collage_file")
+                ):
+                    # Load image collage
+                    collage_fn = os.path.join(root_path, collage_file)
+                    collage = np.array(PIL.Image.open(collage_fn))
+
+                    # Load bin collage
+                    #base, ext = os.path.splitext(collage_file)
+                    #collage_bin_fn = os.path.join(
+                    #    root_path, "{}_bin{}".format(base, ext)
+                    #)
+                    #collage_bin = np.array(PIL.Image.open(collage_bin_fn)).astype(bool)
+
+                    for row in data:
+                        yield self.prepare_output(
+                            obj.copy(),
+                            FlowCamObjectNoBin(row, lst_name, collage),
+                        )
