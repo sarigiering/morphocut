@@ -9,6 +9,7 @@ import skimage.io
 import skimage.measure
 from skimage.color import gray2rgb, rgb2gray
 from skimage.util import dtype
+from skimage import filters
 
 from morphocut import Node, Output, RawOrVariable, ReturnOutputs, closing_if_closable
 
@@ -40,6 +41,35 @@ class ThresholdConst(Node):
             raise ValueError("image.ndim needs to be exactly 2.")
 
         mask = image < self.threshold
+
+        return mask
+
+@ReturnOutputs
+@Output("mask")
+class ThresholdOtsu(Node):
+    """
+    Calculate a mask by applying a otsu threshold.
+
+    The result will be `image < threshold`.
+
+    Args:
+        image (np.ndarray or Variable): Image for which the mask is to be calculated.
+
+    Returns:
+        Variable[np.ndarray]: Mask.
+    """
+
+    def __init__(self, image: RawOrVariable):
+        super().__init__()
+        self.image = image
+
+    def transform(self, image):
+        if image.ndim != 2:
+            raise ValueError("image.ndim needs to be exactly 2.")
+
+        val = filters.threshold_otsu(image)
+
+        mask = image < val
 
         return mask
 
